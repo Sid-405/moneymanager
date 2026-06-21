@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<!--
+  ╔══════════════════════════════════════════════════════════════════╗
+  ║  MY MONEY — PWA SHELL                                           ║
+  ║  This file lives on GitHub Pages. It is NOT the app.           ║
+  ║  The real app UI lives in Apps Script → Index.html (capital I) ║
+  ║                                                                  ║
+  ║  HOW IT WORKS:                                                   ║
+  ║  1. Browser loads this shell → SW registers → manifest linked   ║
+  ║  2. Shell fetches the app HTML from Apps Script                 ║
+  ║  3. App HTML replaces this document (same URL stays)            ║
+  ║  4. Result: full app running at your GitHub Pages URL           ║
+  ║                                                                  ║
+  ║  TO UPDATE THE APP: only touch Apps Script. Never touch this.   ║
+  ╚══════════════════════════════════════════════════════════════════╝
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="My Money">
+  <meta name="theme-color" content="#0b0e14">
+  <title>My Money</title>
+
+  <!-- PWA manifest — must stay here so Chrome detects it before document.write() -->
+  <link rel="manifest" href="./manifest.json">
+  <link rel="apple-touch-icon" href="./icons/icon-192.png">
+
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box;}
+    html,body{height:100%;background:#0b0e14;color:#eef1f7;
+      font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+      display:flex;align-items:center;justify-content:center;}
+    #boot{display:flex;flex-direction:column;align-items:center;gap:20px;padding:32px;text-align:center;}
+    .logo{width:72px;height:72px;border-radius:22px;
+      background:linear-gradient(135deg,#7c5cff,#22d3ee);
+      display:flex;align-items:center;justify-content:center;font-size:36px;
+      box-shadow:0 12px 40px rgba(124,92,255,.5);
+      animation:pop .5s cubic-bezier(.2,.8,.2,1);}
+    @keyframes pop{from{transform:scale(.7);opacity:0;}to{transform:scale(1);opacity:1;}}
+    .ring{width:32px;height:32px;border-radius:50%;
+      border:3px solid rgba(255,255,255,.12);border-top-color:#7c5cff;
+      animation:spin .75s linear infinite;}
+    @keyframes spin{to{transform:rotate(360deg);}}
+    .msg{font-size:13px;color:#9aa3b2;font-weight:500;max-width:240px;line-height:1.5;}
+    .retry{color:#22d3ee;font-size:13px;font-weight:600;text-decoration:none;
+      padding:10px 20px;border-radius:11px;border:1px solid rgba(34,211,238,.35);
+      background:rgba(34,211,238,.08);display:none;}
+    .retry:active{opacity:.7;}
+  </style>
+</head>
+<body>
+  <div id="boot">
+    <div class="logo">💎</div>
+    <div class="ring" id="ring"></div>
+    <p class="msg" id="msg">Loading your finances…</p>
+    <a class="retry" id="retry" href="javascript:location.reload()">Tap to retry</a>
+  </div>
+
+  <script>
+    /* ============================================================
+       STEP 1 — Register the service worker as early as possible.
+       This is what makes "Install app" appear in Chrome's menu.
+       ============================================================ */
+    var SW_READY = false;
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./sw.js', { scope: './' })
+        .then(function(reg) {
+          SW_READY = true;
+          // If a waiting SW exists, activate it now
+          if (reg.waiting) { reg.waiting.postMessage({ type: 'SKIP_WAITING' }); }
+          reg.addEventListener('updatefound', function() {
+            var nw = reg.installing;
+            nw && nw.addEventListener('statechange', function() {
+              if (nw.state === 'installed' && reg.active) {
+                nw.postMessage({ type: 'SKIP_WAITING' });
+              }
+            });
+          });
+        })
+        .catch(function() { SW_READY = true; }); // continue even if SW fails
+    } else {
+      SW_READY = true;
+    }
+
+    /* ============================================================
+       STEP 2 — Load the real app from Apps Script.
+       ▸ Change APP_SOURCE to your deployed /exec URL.
+       ============================================================ */
+    var APP_SOURCE = 'https://script.google.com/macros/s/AKfycbyMAfx_q3tV17pfNr7yHy2qYaqfxqIlfEq229HqIwAX9DEQIjR0JYnGPaIxFmF8FS0U/exec';
+
+    function loadApp() {
+      var url = APP_SOURCE + '?page=app&t=' + Date.now();
+      fetch(url, { method: 'GET', cache: 'no-store' })
+        .then(function(r) {
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.text();
+        })
+        .then(function(html) {
+          if (!html || html.trim().length < 100) throw new Error('empty');
+          // Hand off to the full app. URL stays as the GitHub Pages URL,
+          // so manifest.json, sw.js and icons all still resolve correctly.
+          document.open('text/html', 'replace');
+          document.write(html);
+          document.close();
+        })
+        .catch(function(err) {
+          document.getElementById('ring').style.display = 'none';
+          document.getElementById('msg').textContent =
+            'Could not reach the app right now. Check your connection and try again.';
+          document.getElementById('retry').style.display = 'inline-block';
+        });
+    }
+
+    // Small delay lets the SW registration kick off first, improving
+    // the chance Chrome fires beforeinstallprompt on this very visit.
+    setTimeout(loadApp, 80);
+  </script>
+</body>
+</html>
